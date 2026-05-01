@@ -23,7 +23,7 @@ import re
 import smtplib
 import sys
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from docx import Document as DocxDocument
@@ -69,6 +69,34 @@ def parse_date(raw: str) -> str:
         return datetime(*tt[:6]).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return raw
+
+
+def _msg_datetime(raw: str) -> datetime | None:
+    """Parse a raw RFC 2822 date header into a naive datetime (no tz)."""
+    try:
+        tt = email.utils.parsedate_tz(raw)
+        if tt is None:
+            return None
+        return datetime(*tt[:6])
+    except Exception:
+        return None
+
+
+def _parse_datetime_arg(s: str) -> datetime:
+    """Argparse type: accept YYYY-MM-DD or 'YYYY-MM-DD HH:MM'."""
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    raise argparse.ArgumentTypeError(
+        f"Invalid date/datetime '{s}'. Expected YYYY-MM-DD or 'YYYY-MM-DD HH:MM'."
+    )
+
+
+def _imap_date(dt: datetime) -> str:
+    """Format a datetime as an IMAP SEARCH date string (DD-Mon-YYYY)."""
+    return dt.strftime("%d-%b-%Y")
 
 
 # ── IMAP response parsing ─────────────────────────────────────────────────────
@@ -208,13 +236,47 @@ def imap_connect(addr: str, pw: str) -> imaplib.IMAP4_SSL:
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
-def cmd_list(addr: str, pw: str, count: int) -> None:
-    """List the most recent inbox messages (downloads headers only)."""
+def cmd_list(
+    addr: str,
+    pw: str,
+    count: int,
+    *,
+    subject: str | None = None,
+    from_addr: str | None = None,
+    since: datetime | None = None,
+    before: datetime | None = None,
+    on: datetime | None = None,
+    read: bool | None = None,
+) -> None:
+    """List the most recent inbox messages matching optional filters."""
+    # Build IMAP SEARCH criteria (IMAP has date-level granularity; time filtering is done locally)
+    criteria_parts: list[str] = []
+    if subject:
+        criteria_parts.append(f'SUBJECT "{subject}"')
+    if from_addr:
+        criteria_parts.append(f'FROM "{from_addr}"')
+    if on:
+        # IMAP ON matches the calendar day; use SINCE+BEFORE for reliability across servers
+        criteria_parts.append(f'SINCE {_imap_date(on)}')
+        criteria_parts.append(f'BEFORE {_imap_date(on + timedelta(days=1))}')
+    if since:
+        criteria_parts.append(f'SINCE {_imap_date(since)}')
+    if before:
+        # When a time component is present, push IMAP boundary one day forward
+        # so that messages on that day are fetched and then filtered locally.
+        imap_before = before if not (before.hour or before.minute) else before + timedelta(days=1)
+        criteria_parts.append(f'BEFORE {_imap_date(imap_before)}')
+    if read is True:
+        criteria_parts.append("SEEN")
+    elif read is False:
+        criteria_parts.append("UNSEEN")
+    criteria = " ".join(criteria_parts) if criteria_parts else "ALL"
+
     conn = imap_connect(addr, pw)
-    _, raw_uids = conn.uid("search", None, "ALL")
+    _, raw_uids = conn.uid("search", None, criteria)
     uids = raw_uids[0].split()
     if not uids:
-        print("Inbox is empty.")
+        print("No messages found.")
         conn.logout()
         return
 
@@ -227,22 +289,39 @@ def cmd_list(addr: str, pw: str, count: int) -> None:
             continue
 
         hdr = email.message_from_bytes(hdr_bytes)
-        subject = decode_header_value(hdr.get("Subject") or "(No subject)")
+        raw_date = hdr.get("Date") or ""
+        subject_val = decode_header_value(hdr.get("Subject") or "(No subject)")
         sender = decode_header_value(hdr.get("From") or "(Unknown)")
-        date_str = parse_date(hdr.get("Date") or "")
+        date_str = parse_date(raw_date)
         # Detect likely attachments from Content-Type without fetching the body
         has_attachment = "mixed" in (hdr.get("Content-Type") or "").lower()
 
         rows.append({
             "uid": uid.decode(),
-            "subject": subject,
+            "subject": subject_val,
             "from": sender,
             "date": date_str,
+            "dt": _msg_datetime(raw_date),
             "read": r"\Seen" in flags,
             "att": has_attachment,
         })
 
     conn.logout()
+
+    # Apply time-of-day filtering locally (IMAP SEARCH operates at date granularity only)
+    if on is not None and (on.hour or on.minute):
+        # Match the exact minute window
+        on_end = on + timedelta(minutes=1)
+        rows = [r for r in rows if r["dt"] is not None and on <= r["dt"] < on_end]
+    if since is not None and (since.hour or since.minute):
+        rows = [r for r in rows if r["dt"] is None or r["dt"] >= since]
+    if before is not None and (before.hour or before.minute):
+        rows = [r for r in rows if r["dt"] is None or r["dt"] < before]
+
+    if not rows:
+        print("No messages found.")
+        return
+
     _print_list(rows)
 
 
@@ -250,15 +329,17 @@ def _print_list(rows: list[dict]) -> None:
     if not rows:
         print("No messages to display.")
         return
-    header = f"{'ID':<8} {'From':<30} {'Subject':<45} {'Date':<20} {'R':<3} {'Att'}"
-    sep = "-" * max(len(header), 112)
+    w_from = max(len("From"), max(len(m["from"]) for m in rows))
+    w_subj = max(len("Subject"), max(len(m["subject"]) for m in rows))
+    header = f"{'ID':<8} {'From':<{w_from}} {'Subject':<{w_subj}} {'Date':<20} {'R':<3} {'Att'}"
+    sep = "-" * len(header)
     print(header)
     print(sep)
     for m in rows:
         print(
             f"{m['uid']:<8} "
-            f"{m['from'][:29]:<30} "
-            f"{m['subject'][:44]:<45} "
+            f"{m['from']:<{w_from}} "
+            f"{m['subject']:<{w_subj}} "
             f"{m['date']:<20} "
             f"{'Y' if m['read'] else 'N':<3} "
             f"{'Y' if m['att'] else 'N'}"
@@ -394,6 +475,22 @@ def main() -> None:
         "count", nargs="?", type=int, default=10,
         help="Number of messages to show (default: 10)",
     )
+    p_list.add_argument("--subject", metavar="TEXT",
+                        help="Filter: subject contains TEXT (case-insensitive)")
+    p_list.add_argument("--from", dest="from_addr", metavar="ADDRESS",
+                        help="Filter: sender name/address contains ADDRESS")
+    date_grp = p_list.add_mutually_exclusive_group()
+    date_grp.add_argument("--on", metavar="DATE", type=_parse_datetime_arg,
+                          help="Filter: received on DATE (YYYY-MM-DD) or at minute 'YYYY-MM-DD HH:MM'")
+    date_grp.add_argument("--since", metavar="DATE", type=_parse_datetime_arg,
+                          help="Filter: received on or after DATE (YYYY-MM-DD or 'YYYY-MM-DD HH:MM')")
+    p_list.add_argument("--before", metavar="DATE", type=_parse_datetime_arg,
+                        help="Filter: received before DATE (YYYY-MM-DD or 'YYYY-MM-DD HH:MM'); combinable with --since")
+    read_grp = p_list.add_mutually_exclusive_group()
+    read_grp.add_argument("--read", action="store_true", default=False,
+                          help="Filter: only read (seen) messages")
+    read_grp.add_argument("--unread", action="store_true", default=False,
+                          help="Filter: only unread (unseen) messages")
 
     # read
     p_read = sub.add_parser("read", help="Read a full message by UID")
@@ -425,7 +522,16 @@ def main() -> None:
     addr, pw = get_credentials()
 
     if args.command == "list":
-        cmd_list(addr, pw, args.count)
+        read_filter = True if args.read else (False if args.unread else None)
+        cmd_list(
+            addr, pw, args.count,
+            subject=args.subject,
+            from_addr=args.from_addr,
+            on=args.on,
+            since=args.since,
+            before=args.before,
+            read=read_filter,
+        )
     elif args.command == "read":
         cmd_read(addr, pw, args.uid)
     elif args.command == "attachment":
