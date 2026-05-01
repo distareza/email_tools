@@ -247,6 +247,23 @@ mail_utils/
 
 ---
 
+## Open Claw
+
+Where to put SKILL.md
+
+You should add it alongside your tool (e.g., email_tool.py) inside a skill folder.
+Typical structure:
+
+```
+.openclaw/workspace/
+├── skills/
+│   ├── email_tool/
+│   │   ├── SKILL.md        ✅ <-- put it here
+│   │   ├── email_tool.py.  ✅
+│   │   ├── __init__.py
+│   │   └── requirements.txt (optional)
+```
+
 ## Troubleshooting
 
 | Problem | Fix |
