@@ -248,7 +248,7 @@ def cmd_list(
     before: datetime | None = None,
     on: datetime | None = None,
     read: bool | None = None,
-    fmt: str = "table",
+    fmt: str = "json",
 ) -> None:
     """List the most recent inbox messages matching optional filters."""
     # Build IMAP SEARCH criteria (IMAP has date-level granularity; time filtering is done locally)
@@ -512,7 +512,7 @@ def main() -> None:
     read_grp.add_argument("--unread", action="store_true", default=False,
                           help="Filter: only unread (unseen) messages")
     p_list.add_argument(
-        "--format", dest="format", choices=["table", "json"], default="table",
+        "--format", dest="format", choices=["table", "json"], default="json",
         help="Output format: table (default) or json",
     )
 

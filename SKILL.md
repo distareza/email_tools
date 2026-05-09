@@ -61,8 +61,8 @@ Shows the most recent `count` messages (default: `10`) matching all supplied fil
 
 | Option | Description |
 |--------|-------------|
-| `--format table` | Human-readable aligned table (default) |
-| `--format json` | JSON array; each object has keys `uid`, `from`, `subject`, `date`, `read`, `attachment` |
+| `--format table` | Human-readable aligned table |
+| `--format json` | JSON array; each object has keys `uid`, `from`, `subject`, `date`, `read`, `attachment` (default) |
 
 **Mutual exclusivity rules**
 - `--on` and `--since` are mutually exclusive
@@ -108,11 +108,15 @@ python email_tool.py list --from "boss@" --since 2026-05-01 --unread
 # 50 read messages with "report" in subject
 python email_tool.py list 50 --subject "report" --read
 
-# Output as JSON
+# Output as JSON (default)
+python email_tool.py list
 python email_tool.py list --format json
 
+# Output as table
+python email_tool.py list --format table
+
 # JSON output filtered by sender and date
-python email_tool.py list --from "alice@" --since 2026-05-01 --format json
+python email_tool.py list --from "alice@" --since 2026-05-01
 ```
 
 ---
@@ -123,7 +127,7 @@ python email_tool.py list --from "alice@" --since 2026-05-01 --format json
 python email_tool.py read <uid>
 ```
 
-Prints `From`, `To`, `Date`, `Subject`, attachment filenames, and the message body.
+Prints `From`, `To`, `Date`, `Subject`, attachment filenames, and the message body. **Automatically marks the message as read.**
 
 ```bash
 python email_tool.py read 12345
