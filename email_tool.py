@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import email
+import json
 import email.header
 import email.mime.application
 import email.mime.multipart
@@ -247,6 +248,7 @@ def cmd_list(
     before: datetime | None = None,
     on: datetime | None = None,
     read: bool | None = None,
+    fmt: str = "table",
 ) -> None:
     """List the most recent inbox messages matching optional filters."""
     # Build IMAP SEARCH criteria (IMAP has date-level granularity; time filtering is done locally)
@@ -322,7 +324,25 @@ def cmd_list(
         print("No messages found.")
         return
 
-    _print_list(rows)
+    if fmt == "json":
+        _print_list_json(rows)
+    else:
+        _print_list(rows)
+
+
+def _print_list_json(rows: list[dict]) -> None:
+    output = [
+        {
+            "uid": m["uid"],
+            "from": m["from"],
+            "subject": m["subject"],
+            "date": m["date"],
+            "read": m["read"],
+            "attachment": m["att"],
+        }
+        for m in rows
+    ]
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 def _print_list(rows: list[dict]) -> None:
@@ -347,9 +367,9 @@ def _print_list(rows: list[dict]) -> None:
 
 
 def cmd_read(addr: str, pw: str, uid: str) -> None:
-    """Print the full message (headers + body) for a given UID."""
+    """Print the full message (headers + body) for a given UID and mark it as read."""
     conn = imap_connect(addr, pw)
-    _, data = conn.uid("fetch", uid.encode(), "(BODY.PEEK[])")
+    _, data = conn.uid("fetch", uid.encode(), "(BODY[])")
     body_bytes = extract_msg_bytes(data)
     conn.logout()
 
@@ -491,6 +511,10 @@ def main() -> None:
                           help="Filter: only read (seen) messages")
     read_grp.add_argument("--unread", action="store_true", default=False,
                           help="Filter: only unread (unseen) messages")
+    p_list.add_argument(
+        "--format", dest="format", choices=["table", "json"], default="table",
+        help="Output format: table (default) or json",
+    )
 
     # read
     p_read = sub.add_parser("read", help="Read a full message by UID")
@@ -531,6 +555,7 @@ def main() -> None:
             since=args.since,
             before=args.before,
             read=read_filter,
+            fmt=args.format,
         )
     elif args.command == "read":
         cmd_read(addr, pw, args.uid)

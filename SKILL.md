@@ -1,7 +1,7 @@
 ---
 name: email-tool
 description: 'Interact with Gmail from the terminal using email_tool.py. Use for listing, searching, filtering, reading, or sending Gmail messages. Triggers: list emails, search emails, filter inbox, read email, send email, check inbox, show attachment, email by subject, email by date, email by sender, unread emails, read emails.'
-argument-hint: 'list [count] [--subject TEXT] [--from ADDRESS] [--on DATE] [--since DATE] [--before DATE] [--read|--unread] | read <uid> | attachment <uid> <filename> | send --to <addr> --subject <subj> (--body <text>|--body-file <file>) [--attach file ...] [--compress]'
+argument-hint: 'list [count] [--subject TEXT] [--from ADDRESS] [--on DATE] [--since DATE] [--before DATE] [--read|--unread] [--format table|json] | read <uid> | attachment <uid> <filename> | send --to <addr> --subject <subj> (--body <text>|--body-file <file>) [--attach file ...] [--compress]'
 ---
 
 # email-tool
@@ -26,6 +26,7 @@ python email_tool.py list [count]
                           [--from ADDRESS]
                           [--on DATE | --since DATE] [--before DATE]
                           [--read | --unread]
+                          [--format table|json]
 ```
 
 Shows the most recent `count` messages (default: `10`) matching all supplied filters.
@@ -55,6 +56,13 @@ Shows the most recent `count` messages (default: `10`) matching all supplied fil
 | `--before "YYYY-MM-DD HH:MM"` | Received before this date+time | `--before "2026-05-01 18:00"` |
 | `--read` | Only read (seen) messages | `--read` |
 | `--unread` | Only unread (unseen) messages | `--unread` |
+
+**Output format**
+
+| Option | Description |
+|--------|-------------|
+| `--format table` | Human-readable aligned table (default) |
+| `--format json` | JSON array; each object has keys `uid`, `from`, `subject`, `date`, `read`, `attachment` |
 
 **Mutual exclusivity rules**
 - `--on` and `--since` are mutually exclusive
@@ -99,6 +107,12 @@ python email_tool.py list --from "boss@" --since 2026-05-01 --unread
 
 # 50 read messages with "report" in subject
 python email_tool.py list 50 --subject "report" --read
+
+# Output as JSON
+python email_tool.py list --format json
+
+# JSON output filtered by sender and date
+python email_tool.py list --from "alice@" --since 2026-05-01 --format json
 ```
 
 ---
