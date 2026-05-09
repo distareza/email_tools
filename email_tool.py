@@ -366,7 +366,7 @@ def _print_list(rows: list[dict]) -> None:
         )
 
 
-def cmd_read(addr: str, pw: str, uid: str) -> None:
+def cmd_read(addr: str, pw: str, uid: str, fmt: str = "json") -> None:
     """Print the full message (headers + body) for a given UID and mark it as read."""
     conn = imap_connect(addr, pw)
     _, data = conn.uid("fetch", uid.encode(), "(BODY[])")
@@ -378,15 +378,43 @@ def cmd_read(addr: str, pw: str, uid: str) -> None:
         return
 
     msg = email.message_from_bytes(body_bytes)
-    print(f"From   : {decode_header_value(msg.get('From', ''))}")
-    print(f"To     : {decode_header_value(msg.get('To', ''))}")
-    print(f"Date   : {parse_date(msg.get('Date', ''))}")
-    print(f"Subject: {decode_header_value(msg.get('Subject', ''))}")
     att_parts = get_attachment_parts(msg)
-    if att_parts:
-        print(f"Attach : {', '.join(n for n, _ in att_parts)}")
-    print("-" * 60)
-    print(get_text_body(msg))
+    record = {
+        "uid": uid,
+        "from": decode_header_value(msg.get("From", "")),
+        "to": decode_header_value(msg.get("To", "")),
+        "date": parse_date(msg.get("Date", "")),
+        "subject": decode_header_value(msg.get("Subject", "")),
+        "attachments": [n for n, _ in att_parts],
+        "body": get_text_body(msg),
+    }
+
+    if fmt == "json":
+        print(json.dumps(record, ensure_ascii=False, indent=2))
+    elif fmt == "table":
+        rows = [
+            ("UID",         record["uid"]),
+            ("From",        record["from"]),
+            ("To",          record["to"]),
+            ("Date",        record["date"]),
+            ("Subject",     record["subject"]),
+            ("Attachments", ", ".join(record["attachments"]) or "-"),
+        ]
+        w = max(len(k) for k, _ in rows)
+        print("-" * 60)
+        for k, v in rows:
+            print(f"{k:<{w}} : {v}")
+        print("-" * 60)
+        print(record["body"])
+    else:  # text
+        print(f"From   : {record['from']}")
+        print(f"To     : {record['to']}")
+        print(f"Date   : {record['date']}")
+        print(f"Subject: {record['subject']}")
+        if record["attachments"]:
+            print(f"Attach : {', '.join(record['attachments'])}")
+        print("-" * 60)
+        print(record["body"])
 
 
 def cmd_attachment(addr: str, pw: str, uid: str, filename: str) -> None:
@@ -519,6 +547,10 @@ def main() -> None:
     # read
     p_read = sub.add_parser("read", help="Read a full message by UID")
     p_read.add_argument("uid", help="Message UID (the ID column from 'list')")
+    p_read.add_argument(
+        "--format", dest="format", choices=["text", "table", "json"], default="json",
+        help="Output format: json (default), table, or text",
+    )
 
     # attachment
     p_att = sub.add_parser("attachment", help="Display an attachment from a message")
@@ -558,7 +590,7 @@ def main() -> None:
             fmt=args.format,
         )
     elif args.command == "read":
-        cmd_read(addr, pw, args.uid)
+        cmd_read(addr, pw, args.uid, args.format)
     elif args.command == "attachment":
         cmd_attachment(addr, pw, args.uid, args.filename)
     elif args.command == "send":

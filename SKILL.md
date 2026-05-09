@@ -1,7 +1,7 @@
 ---
 name: email-tool
 description: 'Interact with Gmail from the terminal using email_tool.py. Use for listing, searching, filtering, reading, or sending Gmail messages. Triggers: list emails, search emails, filter inbox, read email, send email, check inbox, show attachment, email by subject, email by date, email by sender, unread emails, read emails.'
-argument-hint: 'list [count] [--subject TEXT] [--from ADDRESS] [--on DATE] [--since DATE] [--before DATE] [--read|--unread] [--format table|json] | read <uid> | attachment <uid> <filename> | send --to <addr> --subject <subj> (--body <text>|--body-file <file>) [--attach file ...] [--compress]'
+argument-hint: 'list [count] [--subject TEXT] [--from ADDRESS] [--on DATE] [--since DATE] [--before DATE] [--read|--unread] [--format table|json] | read <uid> [--format text|table|json] | attachment <uid> <filename> | send --to <addr> --subject <subj> (--body <text>|--body-file <file>) [--attach file ...] [--compress]'
 ---
 
 # email-tool
@@ -124,13 +124,28 @@ python email_tool.py list --from "alice@" --since 2026-05-01
 ### `read` — Read a full message
 
 ```
-python email_tool.py read <uid>
+python email_tool.py read <uid> [--format text|table|json]
 ```
 
 Prints `From`, `To`, `Date`, `Subject`, attachment filenames, and the message body. **Automatically marks the message as read.**
 
+**Output format**
+
+| Option | Description |
+|--------|-------------|
+| `--format json` | JSON object with keys `uid`, `from`, `to`, `date`, `subject`, `attachments`, `body` (default) |
+| `--format table` | Aligned key/value table followed by the message body |
+| `--format text` | Plain labelled lines followed by the message body |
+
 ```bash
+# JSON (default)
 python email_tool.py read 12345
+
+# Aligned table
+python email_tool.py read 12345 --format table
+
+# Plain text
+python email_tool.py read 12345 --format text
 ```
 
 ---
